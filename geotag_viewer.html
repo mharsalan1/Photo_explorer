@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Geotag Extraction</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Custom Styles */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Style Leaflet popups */
+        .leaflet-popup-content-wrapper {
+            border-radius: 0.375rem; /* rounded-md */
+        }
+        .leaflet-popup-content {
+            margin: 10px;
+            font-size: 0.875rem; /* text-sm */
+        }
+        .leaflet-popup-content b {
+            font-weight: 600; /* font-semibold */
+            color: #1f2937; /* gray-800 */
+        }
+        .leaflet-popup-content hr {
+            margin: 4px 0;
+            border-top: 1px solid #e5e7eb; /* border-gray-200 */
+        }
+        .leaflet-popup-content img {
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            border-radius: 0.25rem; /* rounded-sm */
+            margin-bottom: 5px;
+        }
+        /* Ensure map takes height */
+        #map {
+            height: 600px;
+            width: 100%;
+            border-radius: 0.375rem; /* rounded-md */
+            border: 1px solid #d1d5db; /* border-gray-300 */
+        }
+        /* Style tabs */
+        .tab-button {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: border-color 0.3s ease, color 0.3s ease;
+            color: #6b7280; /* gray-500 */
+        }
+        .tab-button.active {
+            border-color: #3b82f6; /* blue-500 */
+            color: #3b82f6; /* blue-500 */
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3b82f6; /* Blue */
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Ensure table images don't break layout */
+        #photo-table img {
+            max-width: 100%;
+            height: auto;
+        }
+        /* Style sliders */
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #d1d5db; /* gray-300 */
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+            border-radius: 4px;
+        }
+        input[type=range]:hover {
+            opacity: 1;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #3b82f6; /* blue-500 */
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: #3b82f6; /* blue-500 */
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+        /* Add some basic styling for the file input */
+        input[type="file"]::file-selector-button {
+            padding: 0.5rem 1rem;
+            margin-right: 1rem;
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+            border: none;
+            border-radius: 0.375rem; /* rounded-md */
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background-color: #2563eb; /* blue-600 */
+        }
+
+        /* Enhanced Grid Styles */
+        #photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); /* Responsive grid */
+            gap: 1.5rem; /* Increased gap */
+            padding: 1rem 0;
+        }
+        .grid-item {
+            position: relative; /* Needed for absolute positioning of popup */
+            background-color: #f9fafb; /* gray-50 */
+            border: 1px solid #e5e7eb; /* gray-200 */
+            border-radius: 0.5rem; /* rounded-lg */
+            padding: 0.75rem; /* p-3 */
+            text-align: center;
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); /* shadow-sm */
+            transition: transform 0.3s ease-out, box-shadow 0.3s ease-out, z-index 0s ease 0.3s; /* Smooth transition */
+            overflow: hidden; /* Hide parts of popup initially */
+        }
+        .grid-item:hover {
+            transform: scale(1.08); /* Zoom effect */
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); /* shadow-lg */
+            z-index: 10; /* Bring to front */
+            overflow: visible; /* Allow popup to show outside bounds */
+            transition: transform 0.3s ease-out, box-shadow 0.3s ease-out, z-index 0s ease 0s; /* z-index changes instantly on hover */
+        }
+        .grid-item img {
+            max-width: 100%;
+            height: 120px; /* Fixed height for consistency */
+            object-fit: cover; /* Cover the area, might crop */
+            border-radius: 0.375rem; /* rounded-md */
+            margin-bottom: 0.5rem; /* space below image */
+            display: block; /* Remove extra space below image */
+            margin-left: auto;
+            margin-right: auto;
+            background-color: #e5e7eb; /* gray-200 placeholder bg */
+        }
+        .grid-item .filename {
+            font-size: 0.75rem; /* text-xs */
+            color: #4b5563; /* gray-600 */
+            font-weight: 500; /* font-medium */
+            margin-top: 0.5rem; /* mb-2 */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis; /* Add ellipsis for long names */
+        }
+        .geotag-popup {
+            position: absolute;
+            bottom: calc(100% + 10px); /* Position above the grid item */
+            left: 50%;
+            transform: translateX(-50%) scale(0.95); /* Start slightly scaled down */
+            width: 280px; /* Fixed width for popup */
+            background-color: rgba(0, 0, 0, 0.85); /* Darker semi-transparent background */
+            color: #f3f4f6; /* gray-100 */
+            padding: 0.75rem; /* p-3 */
+            border-radius: 0.375rem; /* rounded-md */
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); /* shadow-md */
+            font-size: 0.75rem; /* text-xs */
+            line-height: 1.4;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-out, visibility 0s ease 0.3s, transform 0.3s ease-out;
+            z-index: 20; /* Ensure popup is above other items */
+            text-align: left;
+        }
+        .geotag-popup b { /* Style keys within popup */
+            color: #9ca3af; /* gray-400 */
+            font-weight: 600;
+        }
+        .grid-item:hover .geotag-popup {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) scale(1); /* Scale to full size on hover */
+            transition-delay: 0.1s; /* Slight delay before showing */
+        }
+
+        /* Font import */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+
+    <div class="container mx-auto bg-white p-6 rounded-lg shadow-md">
+
+        <h1 class="text-2xl font-bold mb-4 text-gray-800">Photo Geotag Extraction</h1>
+        <p class="text-sm text-gray-600 mb-6">
+            This application extracts and visualizes geotag information embedded within JPG images. Upload your photos, process them, and view the locations and details on a map or in a table. Click on photos in the table or grid view to see full details in a new tab.
+        </p>
+
+        <div class="mb-6">
+            <label for="file-upload" class="block text-sm font-bold text-gray-700 mb-2">Choose JPG file(s)</label>
+
+            <input id="file-upload" type="file" accept=".jpg,.jpeg" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-300 rounded-md cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+
+        <details class="mb-6 bg-gray-50 p-4 rounded border border-gray-200">
+    <summary class="cursor-pointer font-semibold text-gray-700">Settings</summary>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+        <div>
+            <label for="thumbnail-size-photo" class="block text-sm font-medium text-gray-700">Thumbnail Size (Table View)</label>
+            <input type="range" id="thumbnail-size-photo" min="150" max="1000" value="1000" step="10" class="mt-1">
+            <span class="text-xs text-gray-500"><span id="thumbnail-size-photo-value">1000</span>px</span>
+        </div>
+        <div>
+            <label for="thumbnail-size-map" class="block text-sm font-medium text-gray-700">Thumbnail Size (Map Popups)</label>
+            <input type="range" id="thumbnail-size-map" min="50" max="300" value="300" step="10" class="mt-1">
+            <span class="text-xs text-gray-500"><span id="thumbnail-size-map-value">300</span>px</span>
+        </div>
+        <div>
+            <label for="line-length" class="block text-sm font-medium text-gray-700">Direction Line Length (m)</label>
+            <input type="range" id="line-length" min="10" max="500" value="500" step="10" class="mt-1">
+            <span class="text-xs text-gray-500"><span id="line-length-value">500</span>m</span>
+        </div>
+    </div>
+</details>
+
+
+        <div class="flex items-center mb-6">
+            <button id="process-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition duration-150 ease-in-out flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                <i data-lucide="image" class="mr-2 h-5 w-5"></i> Process Photos
+            </button>
+            <div id="status" class="ml-4 flex items-center text-sm text-gray-600">
+                </div>
+        </div>
+
+        <div class="border-b border-gray-200 mb-4">
+            <nav class="flex flex-wrap space-x-4" aria-label="Tabs"> <button id="tab-button-table" class="tab-button active" data-tab="table">Photo Inspection View</button>
+                <button id="tab-button-enhanced" class="tab-button" data-tab="enhanced">Enhanced View</button>
+                <button id="tab-button-map" class="tab-button" data-tab="map">Map View</button>
+            </nav>
+        </div>
+
+        <div>
+            <div id="tab-content-table" class="tab-content active overflow-x-auto">
+                <p id="table-placeholder" class="text-gray-500 italic">Upload and process photos to see the inspection table.</p>
+                <table id="photo-table" class="min-w-full divide-y divide-gray-200 hidden">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Geotags / Status</th> <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thumbnail</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                    </tbody>
+                </table>
+            </div>
+
+             <div id="tab-content-enhanced" class="tab-content">
+                <p id="enhanced-placeholder" class="text-gray-500 italic">Upload and process photos to see the enhanced grid view.</p>
+                <div id="photo-grid" class="hidden">
+                </div>
+            </div>
+
+            <div id="tab-content-map" class="tab-content">
+                <p id="map-placeholder" class="text-gray-500 italic">Upload and process photos to see the map view.</p>
+                <div id="map-container" class="hidden">
+                    <div id="download-links" class="text-right mb-2 text-sm">
+                    </div>
+                    <div id="map"></div>
+                </div>
+                <div id="map-warning" class="mt-4 text-yellow-700 bg-yellow-100 p-3 rounded border border-yellow-300 hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="hidden-canvas" style="display: none;"></canvas>
+
+    <script>
+        // --- DOM Element References ---
+        const fileUpload = document.getElementById('file-upload');
+        const processButton = document.getElementById('process-button');
+        const statusDiv = document.getElementById('status');
+        // Table View Elements
+        const tablePlaceholder = document.getElementById('table-placeholder');
+        const photoTable = document.getElementById('photo-table');
+        const photoTableBody = photoTable.querySelector('tbody');
+        // Enhanced View Elements
+        const enhancedPlaceholder = document.getElementById('enhanced-placeholder');
+        const photoGridDiv = document.getElementById('photo-grid');
+        // Map View Elements
+        const mapPlaceholder = document.getElementById('map-placeholder');
+        const mapContainer = document.getElementById('map-container');
+        const mapDiv = document.getElementById('map');
+        const mapWarningDiv = document.getElementById('map-warning');
+        const downloadLinksDiv = document.getElementById('download-links');
+        // Utility Elements
+        const hiddenCanvas = document.getElementById('hidden-canvas');
+        const ctx = hiddenCanvas.getContext('2d');
+        // Tab Elements
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+        // Settings Elements
+        const thumbnailSizePhotoSlider = document.getElementById('thumbnail-size-photo');
+        const thumbnailSizeMapSlider = document.getElementById('thumbnail-size-map');
+        const lineLengthSlider = document.getElementById('line-length');
+        const thumbnailSizePhotoValue = document.getElementById('thumbnail-size-photo-value');
+        const thumbnailSizeMapValue = document.getElementById('thumbnail-size-map-value');
+        const lineLengthValue = document.getElementById('line-length-value');
+
+        // --- Global State ---
+        let map = null; // Holds the Leaflet map instance
+        // Holds the processed data for all uploaded photos
+        let processedData = []; // Structure: { filename, geotags, thumbnailDataUrl, originalDataUrl, fullExifDetails, bearing, orientation, settings }
+        let currentFiles = []; // Holds the list of files selected by the user
+
+        // --- Constants ---
+        const R = 6371e3; // Earth radius in meters (used for distance calculations)
+
+        // --- Initial Setup ---
+        // Initialize Lucide icons used in the HTML
+        if (typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
+            lucide.createIcons();
+        } else {
+            console.warn("Lucide icons static script not loaded correctly or createIcons function not found.");
+        }
+
+
+        // --- Event Listeners ---
+
+        // Listen for changes in the file input
+        fileUpload.addEventListener('change', (event) => {
+            currentFiles = event.target.files; // Store the selected files
+            showStatus(`${currentFiles.length} file(s) selected.`); // Update status message
+            clearResults(); // Clear any previous results when new files are chosen
+        });
+
+        // Listen for clicks on the "Process Photos" button
+        processButton.addEventListener('click', handleProcessButtonClick);
+
+        // Setup tab switching functionality
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetTab = button.dataset.tab; // Get the target tab ID from data attribute
+                // Update button styles
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                // Update content visibility
+                tabContents.forEach(content => {
+                    content.classList.toggle('active', content.id === `tab-content-${targetTab}`);
+                });
+                // Special handling for the map
+                if (targetTab === 'map' && map) {
+                    setTimeout(() => map.invalidateSize(), 0);
+                }
+            });
+        });
+
+        // Listen for changes on the settings sliders
+        thumbnailSizePhotoSlider.addEventListener('input', (e) => {
+            thumbnailSizePhotoValue.textContent = e.target.value;
+            if (processedData.length > 0) displayTable();
+        });
+        thumbnailSizeMapSlider.addEventListener('input', (e) => {
+            thumbnailSizeMapValue.textContent = e.target.value;
+             if (map && processedData.length > 0) displayMap();
+        });
+        lineLengthSlider.addEventListener('input', (e) => {
+            lineLengthValue.textContent = e.target.value;
+             if (map && processedData.length > 0) displayMap();
+        });
+
+
+        // --- Core Functions ---
+
+        /**
+         * Main function triggered when the "Process Photos" button is clicked.
+         */
+        async function handleProcessButtonClick() {
+            if (!currentFiles || currentFiles.length === 0) {
+                showStatus("Please select JPG files first.", true); return;
+            }
+            disableUI(true);
+            showStatus("Processing...", false, true);
+            processedData = [];
+            try {
+                const processThumbSize = parseInt(thumbnailSizePhotoSlider.value);
+                const currentSettings = {
+                    lineLength: parseInt(lineLengthSlider.value),
+                    mapThumbSize: parseInt(thumbnailSizeMapSlider.value)
+                };
+                console.log(`Starting processing for ${currentFiles.length} files.`); // DEBUG
+                const promises = Array.from(currentFiles).map(file => processSingleFile(file, processThumbSize, currentSettings));
+                const results = await Promise.all(promises);
+                processedData = results.filter(item => item !== null);
+                console.log(`Finished processing. ${processedData.length} photos successfully processed (including potential errors).`); // DEBUG
+                showStatus(`Processed ${processedData.length} out of ${currentFiles.length} files. Check console for details.`, false);
+                if (processedData.length > 0) {
+                    displayTable(); displayEnhancedGrid(); displayMap(); generateDownloadLinks();
+                    tablePlaceholder.classList.add('hidden'); photoTable.classList.remove('hidden');
+                    enhancedPlaceholder.classList.add('hidden'); photoGridDiv.classList.remove('hidden');
+                    mapPlaceholder.classList.add('hidden'); mapContainer.classList.remove('hidden');
+                } else {
+                    showStatus("No processable images found.", true); clearResults();
+                }
+            } catch (error) {
+                console.error("Error during bulk processing:", error); // DEBUG
+                showStatus(`Error: ${error.message}`, true);
+            } finally {
+                disableUI(false);
+            }
+        }
+
+        /**
+         * Processes a single image file. Reads EXIF, generates URLs, extracts details.
+         * Includes detailed logging and refined error handling.
+         */
+        async function processSingleFile(file, thumbSize, settings) {
+            console.log(`Processing file: ${file.name}`); // DEBUG
+            if (!file.type.match('image/jpeg')) {
+                console.warn(`Skipping non-JPEG file: ${file.name}`); return null; // DEBUG
+            }
+            // Initialize variables
+            let fileBuffer, originalDataUrl, exifData = {}, geotags = null, bearing = null, orientation = 1, fullExifDetails = {}, thumbnailDataUrl;
+            const errorPlaceholderThumb = `https://placehold.co/150x120/e5e7eb/6b7280?text=Thumb+Error`;
+            const errorPlaceholderOrig = `https://placehold.co/600x400/e5e7eb/6b7280?text=Load+Error`;
+
+            try {
+                // --- 1. Read ArrayBuffer ---
+                console.log(`[${file.name}] Reading as ArrayBuffer...`); // DEBUG
+                try { fileBuffer = await file.arrayBuffer(); console.log(`[${file.name}] Read ArrayBuffer (${fileBuffer.byteLength} bytes).`); } // DEBUG
+                catch (readBufferError) { console.error(`[${file.name}] Error reading ArrayBuffer:`, readBufferError); throw new Error(`Failed to read file buffer: ${readBufferError.message}`); } // DEBUG
+
+                // --- 2. Parse EXIF ---
+                console.log(`[${file.name}] Parsing EXIF...`); // DEBUG
+                if (typeof exifr === 'undefined' || typeof exifr.parse !== 'function') { throw new Error("EXIF library (exifr) not loaded."); }
+                try {
+                    // Using FULL version now, should include GPS by default
+                    exifData = await exifr.parse(fileBuffer, true); // 'true' still requests all available segments
+                    console.log(`[${file.name}] EXIF raw parsed data:`, exifData); // DEBUG - Check this object for latitude/longitude
+                } catch (exifError) {
+                    console.warn(`[${file.name}] Failed to parse EXIF data:`, exifError); // DEBUG - Treat as warning
+                    exifData = {}; // Ensure exifData is an empty object if parsing fails
+                    fullExifDetails.ExifParseError = exifError.message; // Record the error
+                }
+
+                // --- 3. Extract Geotags ---
+                console.log(`[${file.name}] Extracting geotags...`); // DEBUG
+                 // Check specifically for latitude and longitude properties from exifr result
+                if (exifData && exifData.latitude !== undefined && exifData.longitude !== undefined) {
+                    geotags = { 'GPSLatitude (decimal)': exifData.latitude, 'GPSLongitude (decimal)': exifData.longitude };
+                    // Add other relevant GPS tags if they exist in exifData
+                    if (exifData.GPSAltitude !== undefined) geotags['GPSAltitude'] = exifData.GPSAltitude;
+                    if (exifData.GPSDateStamp !== undefined) geotags['GPSDateStamp'] = exifData.GPSDateStamp; // Often includes time too
+                    if (exifData.GPSSpeed !== undefined) geotags['GPSSpeed'] = exifData.GPSSpeed;
+                    if (exifData.GPSImgDirection !== undefined) geotags['GPSImgDirection'] = exifData.GPSImgDirection;
+                    if (exifData.GPSDestBearing !== undefined && geotags['GPSImgDirection'] === undefined) geotags['GPSDestBearing'] = exifData.GPSDestBearing;
+                    if (exifData.GPSHPositioningError !== undefined) geotags['GPSHPositioningError'] = exifData.GPSHPositioningError;
+
+                    bearing = exifData.GPSImgDirection ?? exifData.GPSDestBearing ?? null;
+                    console.log(`[${file.name}] Geotags FOUND:`, geotags); // DEBUG - Changed log message
+                } else {
+                    geotags = "Missing Geotag"; // Set flag
+                    console.log(`[${file.name}] No GPS Latitude/Longitude found in parsed EXIF.`); // DEBUG - More specific log
+                }
+
+                // --- 4. Get Orientation ---
+                orientation = exifData?.orientation || 1;
+                console.log(`[${file.name}] Orientation: ${orientation}`); // DEBUG
+
+                // --- 5. Populate Full EXIF Details ---
+                console.log(`[${file.name}] Populating full EXIF details...`); // DEBUG
+                if (exifData) {
+                    for (const [key, value] of Object.entries(exifData)) {
+                         if (value !== null && value !== undefined && typeof value !== 'function') {
+                              if (typeof value === 'object' && !Array.isArray(value)) { if(Object.keys(value).length < 10) { fullExifDetails[key] = value; } else { fullExifDetails[key] = '[Complex Object]'; } }
+                              else if (typeof value === 'object' && Array.isArray(value) && value.length > 50) { fullExifDetails[key] = '[Large Array]'; }
+                              else { fullExifDetails[key] = value; }
+                         }
+                    }
+                } console.log(`[${file.name}] Full EXIF details compiled.`); // DEBUG
+
+                // --- 6. Read DataURL ---
+                console.log(`[${file.name}] Reading as DataURL...`); // DEBUG
+                try {
+                    originalDataUrl = await readFileAsDataURL(file);
+                    console.log(`[${file.name}] Read DataURL (length: ${originalDataUrl?.length || 0}).`); // DEBUG
+                } catch (readDataUrlError) {
+                     console.error(`[${file.name}] Error reading DataURL:`, readDataUrlError); // DEBUG
+                     originalDataUrl = errorPlaceholderOrig; // Use placeholder on error
+                     fullExifDetails.DataURLError = readDataUrlError.message; // Record error
+                     // We might still be able to generate a thumb placeholder later, so don't throw yet
+                }
+
+
+                // --- 7. Generate Thumbnail ---
+                console.log(`[${file.name}] Generating thumbnail...`); // DEBUG
+                // Check if originalDataUrl is valid before attempting thumbnail
+                 if (originalDataUrl && !originalDataUrl.startsWith('https://placehold.co')) {
+                    thumbnailDataUrl = await createOrientedThumbnail(originalDataUrl, orientation, thumbSize);
+                 } else {
+                     console.warn(`[${file.name}] Skipping thumbnail generation due to invalid originalDataUrl.`); // DEBUG
+                     thumbnailDataUrl = errorPlaceholderThumb; // Use placeholder if original failed
+                     if(!fullExifDetails.DataURLError) fullExifDetails.ThumbnailError = "Original image data missing"; // Record specific error if not already recorded
+                 }
+                console.log(`[${file.name}] Thumbnail URL (length: ${thumbnailDataUrl?.length || 0}).`); // DEBUG
+
+
+                // --- 8. Return Result ---
+                console.log(`[${file.name}] Successfully processed (may include non-fatal errors).`); // DEBUG
+                return { filename: file.name, geotags: geotags, thumbnailDataUrl: thumbnailDataUrl, originalDataUrl: originalDataUrl, fullExifDetails: fullExifDetails, bearing: bearing, orientation: orientation, settings: settings };
+
+            } catch (error) {
+                // Catch MAJOR errors that prevent further processing
+                console.error(`[${file.name}] CRITICAL Error during processing:`, error); // Log the critical error
+                 // Return a structured error object
+                 return {
+                    filename: file.name,
+                    // MODIFIED: Include error message directly in geotags field for visibility
+                    geotags: `Error: ${error.message}`,
+                    thumbnailDataUrl: errorPlaceholderThumb,
+                    originalDataUrl: errorPlaceholderOrig,
+                    fullExifDetails: { CriticalProcessingError: error.message },
+                    bearing: null,
+                    orientation: 1,
+                    settings: settings
+                 };
+            }
+        }
+
+        /** Helper function to read File as DataURL */
+        function readFileAsDataURL(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = (err) => { console.error(`FileReader error for ${file?.name}:`, err); reject(new Error("Failed to read file as DataURL.")); }; // Added safety for file.name
+                reader.readAsDataURL(file);
+            });
+        }
+
+        /** Creates oriented thumbnail from DataURL */
+        function createOrientedThumbnail(originalDataUrl, orientation, maxThumbSize) {
+            console.log(`Creating thumbnail with orientation ${orientation}, max size ${maxThumbSize}`); // DEBUG
+            return new Promise((resolve) => { // Removed reject for simplicity, always resolve with URL
+                const img = new Image();
+                img.onload = () => {
+                    console.log(`Thumbnail: Image loaded successfully (original size ${img.width}x${img.height}).`); // DEBUG
+                    let width = img.width, height = img.height, thumbWidth, thumbHeight; const aspectRatio = width / height;
+                    if (width > height) { thumbWidth = Math.min(width, maxThumbSize); thumbHeight = Math.round(thumbWidth / aspectRatio); } else { thumbHeight = Math.min(height, maxThumbSize); thumbWidth = Math.round(thumbHeight * aspectRatio); }
+                    console.log(`Thumbnail: Calculated dimensions ${thumbWidth}x${thumbHeight}`); // DEBUG
+                    if (orientation >= 5 && orientation <= 8) { hiddenCanvas.width = thumbHeight; hiddenCanvas.height = thumbWidth; } else { hiddenCanvas.width = thumbWidth; hiddenCanvas.height = thumbHeight; }
+                    console.log(`Thumbnail: Canvas size set to ${hiddenCanvas.width}x${hiddenCanvas.height}`); // DEBUG
+                    ctx.save(); console.log(`Thumbnail: Applying transform for orientation ${orientation}`); // DEBUG
+                    switch (orientation) {
+                         case 2: ctx.transform(-1, 0, 0, 1, hiddenCanvas.width, 0); break; case 3: ctx.transform(-1, 0, 0, -1, hiddenCanvas.width, hiddenCanvas.height); break; case 4: ctx.transform(1, 0, 0, -1, 0, hiddenCanvas.height); break;
+                         case 5: ctx.transform(0, 1, 1, 0, 0, 0); break; case 6: ctx.transform(0, 1, -1, 0, hiddenCanvas.width, 0); break; case 7: ctx.transform(0, -1, -1, 0, hiddenCanvas.width, hiddenCanvas.height); break;
+                         case 8: ctx.transform(0, -1, 1, 0, 0, hiddenCanvas.height); break; default: console.log("Thumbnail: No transform needed."); break; // DEBUG
+                    }
+                    console.log("Thumbnail: Drawing image onto canvas..."); // DEBUG
+                    try { // Add try-catch around drawImage
+                        ctx.drawImage(img, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
+                        console.log("Thumbnail: Image drawn."); // DEBUG
+                        ctx.restore(); // Restore context
+                        const resultDataUrl = hiddenCanvas.toDataURL('image/jpeg', 0.8); // Export canvas
+                        console.log(`Thumbnail: Generated DataURL (length ${resultDataUrl.length})`); // DEBUG
+                        resolve(resultDataUrl);
+                    } catch (drawError) {
+                         console.error("Thumbnail: Error during canvas drawImage:", drawError); // DEBUG
+                         ctx.restore(); // Ensure context is restored even on error
+                         resolve(`https://placehold.co/${maxThumbSize}x${Math.round(maxThumbSize*0.8)}/e5e7eb/6b7280?text=Draw+Error`); // Resolve with error placeholder
+                    }
+                };
+                img.onerror = (err) => {
+                    console.error("Thumbnail: Image load failed!", err); // DEBUG
+                    resolve(`https://placehold.co/${maxThumbSize}x${Math.round(maxThumbSize*0.8)}/e5e7eb/6b7280?text=Load+Error`); // Error placeholder
+                };
+                img.src = originalDataUrl;
+            });
+        }
+
+
+        /** Displays data in the table */
+        function displayTable() {
+            photoTableBody.innerHTML = ''; const currentPhotoThumbSize = parseInt(thumbnailSizePhotoSlider.value);
+            if (processedData.length === 0) { tablePlaceholder.classList.remove('hidden'); photoTable.classList.add('hidden'); return; }
+            tablePlaceholder.classList.add('hidden'); photoTable.classList.remove('hidden');
+            processedData.forEach((item, index) => {
+                const row = photoTableBody.insertRow(); row.insertCell().textContent = item.filename;
+                const geotagCell = row.insertCell();
+                // Use helper which now styles errors
+                geotagCell.innerHTML = formatGeotagsForDisplay(item.geotags);
+                // No need for separate class add here anymore
+
+                const thumbCell = row.insertCell(); let imgHtml = '';
+                 // Use placeholder URL directly if thumbnail generation failed
+                 if (item.thumbnailDataUrl && !item.thumbnailDataUrl.startsWith('https://placehold.co')) { imgHtml = `<img src="${item.thumbnailDataUrl}" alt="${item.filename} thumbnail" style="max-width: ${currentPhotoThumbSize}px; max-height: ${currentPhotoThumbSize}px; width: auto; height: auto; border-radius: 0.25rem; cursor: pointer;" data-index="${index}">`; }
+                 else { imgHtml = `<img src="${item.thumbnailDataUrl}" alt="Error or missing thumbnail for ${item.filename}" style="max-width: ${currentPhotoThumbSize}px; max-height: ${currentPhotoThumbSize}px; width: auto; height: auto; border-radius: 0.25rem; cursor: pointer; filter: grayscale(80%);" data-index="${index}">`; } // Show placeholder, make clickable, maybe grayscale
+                 thumbCell.innerHTML = imgHtml; const imgElement = thumbCell.querySelector('img'); if (imgElement) { imgElement.addEventListener('click', handlePhotoClick); }
+            });
+        }
+
+        /** Displays data in the enhanced grid */
+        function displayEnhancedGrid() {
+            photoGridDiv.innerHTML = '';
+            if (processedData.length === 0) { enhancedPlaceholder.classList.remove('hidden'); photoGridDiv.classList.add('hidden'); return; }
+            enhancedPlaceholder.classList.add('hidden'); photoGridDiv.classList.remove('hidden');
+            processedData.forEach((item, index) => {
+                const gridItem = document.createElement('div'); gridItem.className = 'grid-item'; gridItem.style.cursor = 'pointer'; gridItem.dataset.index = index;
+                const img = document.createElement('img'); img.src = item.thumbnailDataUrl; img.alt = item.filename;
+                 img.onerror = () => { img.src = `https://placehold.co/150x120/e5e7eb/6b7280?text=Error`; img.alt = `Error loading ${item.filename}`; };
+                 if (item.thumbnailDataUrl && item.thumbnailDataUrl.startsWith('https://placehold.co')) { img.style.filter = 'grayscale(80%)'; }
+                const filenameDiv = document.createElement('div'); filenameDiv.className = 'filename'; filenameDiv.textContent = item.filename; filenameDiv.title = item.filename;
+                const popupDiv = document.createElement('div'); popupDiv.className = 'geotag-popup';
+                 // Use helper which now styles errors
+                 popupDiv.innerHTML = formatGeotagsForDisplay(item.geotags);
+                 // No need for separate class add here anymore
+
+                gridItem.appendChild(img); gridItem.appendChild(filenameDiv); gridItem.appendChild(popupDiv);
+                photoGridDiv.appendChild(gridItem); gridItem.addEventListener('click', handlePhotoClick);
+            });
+        }
+
+        /** Handles click on photo thumbnail/grid item */
+        /** Handles click on photo thumbnail/grid item */
+    function handlePhotoClick(event) {
+        const targetElement = event.currentTarget; const index = parseInt(targetElement.dataset.index, 10); console.log(`Photo clicked: Index ${index}`); // DEBUG
+        if (isNaN(index) || index < 0 || index >= processedData.length) { console.error("Invalid index found on clicked photo:", index); return; }
+
+        const originalPhotoData = processedData[index]; console.log("Original data for clicked photo:", originalPhotoData); // DEBUG
+
+        // Create a copy to modify for storage
+        const dataForStorage = { ...originalPhotoData };
+
+        // *** IMPORTANT: Delete originalDataUrl AGAIN to avoid exceeding storage quota ***
+        delete dataForStorage.originalDataUrl;
+        console.log("Data prepared for sessionStorage (originalDataUrl *removed* to save space):", dataForStorage); // DEBUG - Updated log
+
+        // Check if essential data (like thumbnail) is present
+        if (!dataForStorage || !dataForStorage.thumbnailDataUrl) { // Check for thumbnailDataUrl, as original is now removed
+            console.error("Missing essential photo data (thumbnailDataUrl) for index:", index);
+            showStatus("Cannot open detail view: essential thumbnail data missing.", true);
+            return;
+        }
+
+        try {
+            // Attempt to stringify and store the smaller data object
+            const dataString = JSON.stringify(dataForStorage);
+            console.log("Stringified data for storage length:", dataString.length); // DEBUG
+
+            // Check estimated size (very rough check, actual storage includes key name etc.)
+            if (dataString.length > 4 * 1024 * 1024) { // Warn if > ~4MB
+                 console.warn(`Data for index ${index} is large (${(dataString.length / 1024 / 1024).toFixed(2)} MB), might still approach quota limits.`);
+            }
+
+            sessionStorage.setItem('photoDetailData', dataString);
+
+            if (sessionStorage.getItem('photoDetailData')) {
+                console.log("Data successfully set in sessionStorage.");
+                window.open('detail.html', '_blank');
+            } else {
+                // This case might be hard to reach if setItem throws directly
+                console.error("Failed to set data in sessionStorage! Unknown reason if quota error didn't throw.");
+                showStatus("Error preparing detail view. Failed to save data.", true);
+            }
+        } catch (error) {
+             // Catch potential errors, including the QuotaExceededError
+             if (error.name === 'QuotaExceededError') {
+                console.error("Error storing data: QUOTA EXCEEDED!", error);
+                showStatus(`Error: Photo data too large to store for detail view (Quota Exceeded). Try smaller images.`, true);
+             } else {
+                 console.error("Error storing data or opening new tab:", error);
+                 showStatus(`Error preparing detail view: ${error.message}`, true);
+             }
+             // Attempt to clear potentially partially stored data
+             try { sessionStorage.removeItem('photoDetailData'); } catch {}
+        }
+    }
+
+        /** Displays the map */
+        function displayMap() {
+            // (Map display logic remains the same)
+            const geotaggedPhotos = processedData.filter(item => typeof item.geotags === 'object'); const currentMapThumbSize = parseInt(thumbnailSizeMapSlider.value); const currentLineLength = parseInt(lineLengthSlider.value); mapWarningDiv.classList.add('hidden');
+            if (geotaggedPhotos.length === 0) { mapPlaceholder.classList.remove('hidden'); mapContainer.classList.add('hidden'); if(processedData.length > 0) { mapWarningDiv.textContent = "No geotagged photos found."; mapWarningDiv.classList.remove('hidden'); } if (map) { if (map.featureGroupMarkers) map.removeLayer(map.featureGroupMarkers); if (map.featureGroupLines) map.removeLayer(map.featureGroupLines); } return; }
+            mapPlaceholder.classList.add('hidden'); mapContainer.classList.remove('hidden');
+            if (!map) { map = L.map(mapDiv).setView([-33.86, 151.20], 10); var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }); var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '&copy; Esri' }); osmLayer.addTo(map); L.control.layers({"OpenStreetMap": osmLayer, "Satellite": satelliteLayer}, null, { collapsed: false }).addTo(map); }
+             if (map.featureGroupMarkers) map.removeLayer(map.featureGroupMarkers); if (map.featureGroupLines) map.removeLayer(map.featureGroupLines);
+            const markers = []; const lines = [];
+            geotaggedPhotos.forEach(item => {
+                const lat = item.geotags['GPSLatitude (decimal)']; const lon = item.geotags['GPSLongitude (decimal)'];
+                 const popupContent = `<div style="text-align: center;"><img src="${item.thumbnailDataUrl}" alt="${item.filename}" width="${currentMapThumbSize}px" style="border: 1px solid #ccc; border-radius: 4px;"><br><b>${escapeXml(item.filename)}</b><hr style="margin: 2px 0;"><div style="text-align: left; font-size: 0.8rem;">Lat: ${lat.toFixed(5)}<br>Lon: ${lon.toFixed(5)}${item.geotags.GPSAltitude ? `<br>Alt: ${item.geotags.GPSAltitude.toFixed(1)}m` : ''}${item.bearing !== null ? `<br>Bearing: ${item.bearing.toFixed(1)}°` : ''}</div></div>`;
+                const marker = L.marker([lat, lon]).bindPopup(popupContent); markers.push(marker);
+                if (item.bearing !== null && currentLineLength > 0) { const bearingRad = item.bearing * Math.PI / 180; const startLatRad = lat * Math.PI / 180; const startLonRad = lon * Math.PI / 180; const distance = currentLineLength; const endLatRad = Math.asin(Math.sin(startLatRad) * Math.cos(distance / R) + Math.cos(startLatRad) * Math.sin(distance / R) * Math.cos(bearingRad)); const endLonRad = startLonRad + Math.atan2(Math.sin(bearingRad) * Math.sin(distance / R) * Math.cos(startLatRad), Math.cos(distance / R) - Math.sin(startLatRad) * Math.sin(endLatRad)); const endLat = endLatRad * 180 / Math.PI; const endLon = endLonRad * 180 / Math.PI; const line = L.polyline([[lat, lon], [endLat, endLon]], { color: 'blue', weight: 2 }); lines.push(line); }
+            });
+            if (markers.length > 0) { map.featureGroupMarkers = L.featureGroup(markers).addTo(map); try { map.fitBounds(map.featureGroupMarkers.getBounds().pad(0.1)); } catch (e) { console.error("Could not fit map bounds:", e); map.setView([-33.86, 151.20], 10); } }
+             if (lines.length > 0) { map.featureGroupLines = L.featureGroup(lines).addTo(map); }
+            setTimeout(() => map.invalidateSize(), 0);
+        }
+
+         /** Generates download links */
+        function generateDownloadLinks() {
+            downloadLinksDiv.innerHTML = ''; const geotaggedPhotos = processedData.filter(item => typeof item.geotags === 'object'); if (geotaggedPhotos.length === 0) return;
+            try { const kmlContent = createKmlString(geotaggedPhotos, parseInt(lineLengthSlider.value)); const kmlBlob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml;charset=utf-8' }); const kmlUrl = URL.createObjectURL(kmlBlob); const kmlLink = document.createElement('a'); kmlLink.href = kmlUrl; kmlLink.download = 'Photo_Locations.kml'; kmlLink.textContent = 'Download KML'; kmlLink.className = 'text-blue-600 hover:text-blue-800 hover:underline mr-3'; downloadLinksDiv.appendChild(kmlLink); } catch (error) { console.error("Failed KML:", error); const kmlError = document.createElement('span'); kmlError.textContent = 'KML Error'; kmlError.className = 'text-red-600 mr-3'; downloadLinksDiv.appendChild(kmlError); }
+             try { const geoJsonContent = createGeoJsonString(geotaggedPhotos, parseInt(lineLengthSlider.value)); const geoJsonBlob = new Blob([geoJsonContent], { type: 'application/geo+json;charset=utf-8' }); const geoJsonUrl = URL.createObjectURL(geoJsonBlob); const geoJsonLink = document.createElement('a'); geoJsonLink.href = geoJsonUrl; geoJsonLink.download = 'Photo_Locations.geojson'; geoJsonLink.textContent = 'Download GeoJSON'; geoJsonLink.className = 'text-blue-600 hover:text-blue-800 hover:underline'; downloadLinksDiv.appendChild(geoJsonLink); } catch (error) { console.error("Failed GeoJSON:", error); const geoJsonError = document.createElement('span'); geoJsonError.textContent = 'GeoJSON Error'; geoJsonError.className = 'text-red-600'; downloadLinksDiv.appendChild(geoJsonError); }
+        }
+
+         /** Creates KML string */
+        function createKmlString(data, lineLength) {
+            let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`; data.forEach(item => { if (typeof item.geotags !== 'object') return; const lat = item.geotags['GPSLatitude (decimal)']; const lon = item.geotags['GPSLongitude (decimal)']; const alt = item.geotags['GPSAltitude'] || 0; kml += `<Placemark><name>${escapeXml(item.filename)}</name><description><![CDATA[${formatGeotagsForDisplay(item.geotags)}<br><img src="${item.thumbnailDataUrl}" width="150">]]></description><Point><coordinates>${lon},${lat},${alt}</coordinates></Point></Placemark>`; if (item.bearing !== null && lineLength > 0) { const bearingRad = item.bearing * Math.PI / 180; const startLatRad = lat * Math.PI / 180; const startLonRad = lon * Math.PI / 180; const endLatRad = Math.asin(Math.sin(startLatRad) * Math.cos(lineLength / R) + Math.cos(startLatRad) * Math.sin(lineLength / R) * Math.cos(bearingRad)); const endLonRad = startLonRad + Math.atan2(Math.sin(bearingRad) * Math.sin(lineLength / R) * Math.cos(startLatRad), Math.cos(lineLength / R) - Math.sin(startLatRad) * Math.sin(endLatRad)); const endLat = endLatRad * 180 / Math.PI; const endLon = endLonRad * 180 / Math.PI; kml += `<Placemark><name>${escapeXml(item.filename)} Direction</name><LineString><coordinates>${lon},${lat},${alt} ${endLon},${endLat},${alt}</coordinates></LineString><Style><LineStyle><color>ff007bff</color><width>2</width></LineStyle></Style></Placemark>`; } }); kml += `</Document></kml>`; return kml;
+        }
+
+         /** Creates GeoJSON string */
+        function createGeoJsonString(data, lineLength) {
+            const features = []; data.forEach(item => { if (typeof item.geotags !== 'object') return; const lat = item.geotags['GPSLatitude (decimal)']; const lon = item.geotags['GPSLongitude (decimal)']; const alt = item.geotags['GPSAltitude'] || 0; const properties = { filename: item.filename }; for (const [key, value] of Object.entries(item.geotags)) { if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) properties[key] = value; else properties[key] = String(value); } features.push({ type: "Feature", geometry: { type: "Point", coordinates: [lon, lat, alt] }, properties: properties }); if (item.bearing !== null && lineLength > 0) { const bearingRad = item.bearing * Math.PI / 180; const startLatRad = lat * Math.PI / 180; const startLonRad = lon * Math.PI / 180; const endLatRad = Math.asin(Math.sin(startLatRad) * Math.cos(lineLength / R) + Math.cos(startLatRad) * Math.sin(lineLength / R) * Math.cos(bearingRad)); const endLonRad = startLonRad + Math.atan2(Math.sin(bearingRad) * Math.sin(lineLength / R) * Math.cos(startLatRad), Math.cos(lineLength / R) - Math.sin(startLatRad) * Math.sin(endLatRad)); const endLat = endLatRad * 180 / Math.PI; const endLon = endLonRad * 180 / Math.PI; features.push({ type: "Feature", geometry: { type: "LineString", coordinates: [[lon, lat, alt], [endLon, endLat, alt]] }, properties: { filename: item.filename, type: "Direction Line", bearing: item.bearing } }); } }); return JSON.stringify({ type: "FeatureCollection", features: features }, null, 2);
+        }
+
+
+        // --- Helper Functions ---
+
+        /** Formats geotag object into HTML string for display */
+        function formatGeotagsForDisplay(geotags) {
+            // MODIFIED: Check if it's the specific error string from processSingleFile
+            if (typeof geotags !== 'object' && String(geotags).includes('Error')) {
+                 return `<span class="text-red-500 text-xs">${escapeXml(String(geotags))}</span>`; // Added text-xs
+            }
+            if (typeof geotags !== 'object') { return escapeXml(String(geotags)); } // Handle "Missing Geotag" etc.
+
+            let formatted = [];
+            const sortedKeys = Object.keys(geotags).sort();
+            for (const key of sortedKeys) {
+                 const value = geotags[key]; let displayValue = value;
+                 if (typeof value === 'number') { // Format numbers
+                     if (key.toLowerCase().includes('latitude') || key.toLowerCase().includes('longitude')) { displayValue = value.toFixed(6); }
+                     else if (Number.isInteger(value)) { displayValue = value.toString(); }
+                     else { displayValue = value.toFixed(2); }
+                 } else if (value === undefined || value === null) { displayValue = 'N/A'; } // Handle null/undefined
+                 formatted.push(`<b>${escapeXml(key)}:</b> ${escapeXml(String(displayValue))}`);
+            } return formatted.join('<br>');
+        }
+
+        /** Escapes characters for safe HTML/XML insertion */
+        function escapeXml(unsafe) { if (typeof unsafe !== 'string') { unsafe = String(unsafe); } return unsafe.replace(/[<>&'"]/g, function (c) { switch (c) { case '<': return '&lt;'; case '>': return '&gt;'; case '&': return '&amp;'; case '\'': return '&apos;'; case '"': return '&quot;'; } }); }
+
+        /** Displays status messages to the user */
+        function showStatus(message, isError = false, showSpinner = false) { statusDiv.innerHTML = ''; if (showSpinner) { const spinner = document.createElement('div'); spinner.className = 'loader'; statusDiv.appendChild(spinner); } const textSpan = document.createElement('span'); textSpan.textContent = message; textSpan.className = isError ? 'text-red-600' : 'text-gray-600'; statusDiv.appendChild(textSpan); }
+
+        /** Disables/Enables UI elements during processing */
+        function disableUI(disable) { processButton.disabled = disable; fileUpload.disabled = disable; thumbnailSizePhotoSlider.disabled = disable; thumbnailSizeMapSlider.disabled = disable; lineLengthSlider.disabled = disable; }
+
+         /** Clears all displayed results */
+         function clearResults() { processedData = []; photoTableBody.innerHTML = ''; tablePlaceholder.classList.remove('hidden'); photoTable.classList.add('hidden'); photoGridDiv.innerHTML = ''; enhancedPlaceholder.classList.remove('hidden'); photoGridDiv.classList.add('hidden'); mapPlaceholder.classList.remove('hidden'); mapContainer.classList.add('hidden'); mapWarningDiv.classList.add('hidden'); downloadLinksDiv.innerHTML = ''; if (map) { if (map.featureGroupMarkers) map.removeLayer(map.featureGroupMarkers); map.featureGroupMarkers = null; if (map.featureGroupLines) map.removeLayer(map.featureGroupLines); map.featureGroupLines = null; } }
+    </script>
+</body>
+</html>

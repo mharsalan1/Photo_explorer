@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Details</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""></script>
+      <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Basic body styling */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* gray-100 */
+        }
+        /* Map container styling */
+        #detail-map {
+            height: 350px; /* Adjust height as needed */
+            width: 100%;
+            border-radius: 0.375rem; /* rounded-md */
+            border: 1px solid #d1d5db; /* border-gray-300 */
+        }
+        /* Styling for outer sections (white boxes) */
+        .detail-outer-section { /* Renamed from detail-section to avoid confusion */
+            background-color: #ffffff;
+            padding: 1.5rem; /* p-6 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); /* shadow */
+            margin-bottom: 1.5rem; /* mb-6 */
+        }
+        /* Section heading styling (for non-card sections like Photo, Location) */
+        .detail-outer-section h2 {
+            font-size: 1.25rem; /* text-xl */
+            font-weight: 600; /* font-semibold */
+            color: #1f2937; /* gray-800 */
+            margin-bottom: 1rem; /* mb-4 */
+            border-bottom: 1px solid #e5e7eb; /* border-gray-200 */
+            padding-bottom: 0.5rem; /* pb-2 */
+        }
+
+        /* ------- NEW Styles for Enhanced Detail Presentation ------- */
+
+        /* Styling for the individual detail group cards */
+        .detail-group-card {
+            background-color: #ffffff; /* White background */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); /* shadow-md */
+            margin-bottom: 1.5rem; /* mb-6, space between cards */
+            overflow: hidden; /* Ensures child borders/backgrounds don't leak */
+        }
+
+        /* Styling for the header within each card */
+        .detail-group-header {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1.25rem; /* py-3 px-5 */
+            background-color: #f9fafb; /* gray-50, slightly different header bg */
+            border-bottom: 1px solid #e5e7eb; /* border-gray-200 */
+        }
+
+        /* Icon styling within the header (wrapper for layout) */
+         .detail-group-header .icon-wrapper {
+            display: inline-flex; /* Aligns icon nicely */
+            align-items: center;
+            justify-content: center;
+            margin-right: 0.75rem; /* mr-3 */
+            color: #3b82f6; /* blue-500, Icon color */
+        }
+        /* Actual SVG icon size */
+        .detail-group-header .icon-wrapper svg {
+            height: 1.125rem; /* h-4.5 */
+            width: 1.125rem; /* w-4.5 */
+        }
+
+        /* Group title styling */
+        .detail-group-header h3 {
+            font-size: 1.125rem; /* text-lg */
+            font-weight: 600; /* font-semibold */
+            color: #1f2937; /* gray-800 */
+            margin: 0; /* Remove default margins */
+            line-height: 1.25; /* Adjust line height for alignment with icon */
+        }
+
+        /* Container for the grid within the card */
+        .detail-group-content {
+            padding: 1.25rem; /* p-5 */
+        }
+
+        /* Grid layout for details */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* Responsive columns */
+            gap: 0.75rem 1.25rem; /* row-gap column-gap */
+        }
+
+        /* Enhanced styling for individual key-value pairs */
+        .detail-item {
+            padding: 0.5rem 0; /* py-2 */
+            /* Add subtle bottom border for separation */
+            border-bottom: 1px solid #f3f4f6; /* border-gray-100 */
+            display: flex; /* Use flex for better alignment */
+            flex-wrap: wrap; /* Allow wrapping for long values */
+            align-items: baseline; /* Align baseline of key and value */
+        }
+        /* Remove border from last row of items */
+         .detail-grid > .detail-item:nth-last-child(-n+2) { /* Target last potentially 1 or 2 items depending on grid width */
+            /* Approximation: may need JS for perfect last row detection */
+           /* border-bottom: none; */ /* Removing this rule as it's complex and often okay */
+         }
+
+
+        /* Enhanced key styling */
+        .detail-item .key {
+            font-weight: 600; /* font-semibold */
+            color: #374151; /* gray-700 */
+            margin-right: 0.5rem; /* mr-2 */
+            flex-shrink: 0; /* Prevent key from shrinking */
+        }
+
+        /* Enhanced value styling */
+        .detail-item .value {
+            color: #111827; /* gray-900 */
+            word-break: break-word;
+        }
+
+        /* ------- End of NEW Styles ------- */
+
+        /* Font import */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="container mx-auto max-w-6xl">
+        <h1 id="detail-filename" class="text-3xl font-bold mb-6 text-gray-800">Photo Details</h1>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 detail-outer-section">
+                <h2>Photo Preview (Thumbnail)</h2>
+                <img id="detail-photo" src="https://placehold.co/600x400/e5e7eb/6b7280?text=Loading..." alt="Photo Preview" class="w-full h-auto rounded-md shadow-sm border border-gray-200">
+                 <p class="text-xs text-gray-500 mt-1 italic">Displaying processed thumbnail due to potential size constraints.</p>
+            </div>
+
+            <div id="map-section" class="detail-outer-section hidden">
+                <h2>Location</h2>
+                <div id="detail-map"></div>
+                <p id="map-info" class="text-xs text-gray-500 mt-2"></p>
+            </div>
+        </div>
+
+        <div class="mt-6"> <h2 class="text-2xl font-semibold mb-4 text-gray-800">Extracted Details</h2>
+             <div id="details-container">
+                <p class="text-gray-500 italic">Loading details...</p>
+            </div>
+        </div>
+
+
+        <div id="error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-6" role="alert">
+          <strong class="font-bold">Error:</strong>
+          <span id="error-text" class="block sm:inline">Could not load photo details. Please ensure you clicked the photo correctly or try reprocessing.</span>
+        </div>
+
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const detailFilename = document.getElementById('detail-filename');
+        const detailPhoto = document.getElementById('detail-photo');
+        const mapSection = document.getElementById('map-section');
+        const detailMapDiv = document.getElementById('detail-map');
+        const mapInfo = document.getElementById('map-info');
+        const detailsContainer = document.getElementById('details-container');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text'); // Span for specific error message
+
+        // --- Constants ---
+        const R_DETAIL = 6371e3; // Earth radius in meters for calculations
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
+                 // We call createIcons AFTER dynamically adding icons if needed,
+                 // but having it here ensures statically placed icons render.
+                lucide.createIcons();
+            } else {
+                console.warn("Lucide icons script not loaded correctly or createIcons function not found.");
+            }
+            loadPhotoDetails();
+        });
+
+        /**
+         * Loads photo data from sessionStorage and populates the page.
+         */
+        function loadPhotoDetails() {
+            let dataString = null;
+            let data = null;
+            try {
+                console.log("Attempting to load data from sessionStorage...");
+                dataString = sessionStorage.getItem('photoDetailData');
+
+                if (!dataString) {
+                    console.error("sessionStorage key 'photoDetailData' not found or is empty.");
+                    throw new Error("No photo data found in session storage. Please go back and click a photo.");
+                }
+                console.log("Raw data string from sessionStorage:", dataString.substring(0, 200) + "...");
+
+                try {
+                    data = JSON.parse(dataString);
+                    console.log("Successfully parsed data:", data);
+                } catch (parseError) {
+                    console.error("Error parsing JSON data from sessionStorage:", parseError);
+                    console.error("Data string that failed parsing:", dataString);
+                    throw new Error("Failed to parse photo data. The stored data might be corrupted.");
+                }
+
+                if (!data || typeof data !== 'object') {
+                    console.error("Parsed data is null or not an object.");
+                    throw new Error("Invalid photo data format.");
+                }
+
+                // --- Populate Basic Info ---
+                detailFilename.textContent = data.filename || "Photo Details";
+                detailPhoto.src = data.thumbnailDataUrl || 'https://placehold.co/600x400/e5e7eb/6b7280?text=Image+Not+Found';
+                detailPhoto.alt = data.filename ? `${data.filename} (Thumbnail)` : "Photo Thumbnail";
+                detailPhoto.onerror = () => {
+                    detailPhoto.src = 'https://placehold.co/600x400/e5e7eb/6b7280?text=Load+Error';
+                    detailPhoto.alt = `Error loading thumbnail for ${data.filename || 'photo'}`;
+                };
+
+                // --- Populate Detailed EXIF Info using Cards ---
+                populateDetails(data.fullExifDetails || {}); // CALL THE UPDATED FUNCTION
+
+                // --- Setup Map (Conditional) ---
+                if (data.geotags && typeof data.geotags === 'object') {
+                    const lat = data.geotags['GPSLatitude (decimal)'];
+                    const lon = data.geotags['GPSLongitude (decimal)'];
+                    const bearing = data.bearing;
+                    const lineLength = data.settings?.lineLength || 50;
+
+                    if (lat !== undefined && lon !== undefined) {
+                        console.log("Setting up map for:", lat, lon);
+                        mapSection.classList.remove('hidden');
+                        setupDetailMap(lat, lon, bearing, lineLength, data.thumbnailDataUrl, data.filename);
+                        mapInfo.textContent = `Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}`;
+                        if(data.geotags.GPSAltitude) mapInfo.textContent += `, Alt: ${data.geotags.GPSAltitude.toFixed(1)}m`;
+                        if(bearing !== null) mapInfo.textContent += `, Bearing: ${bearing.toFixed(1)}°`;
+                    } else {
+                        console.log("Geotags object present, but lat/lon missing.");
+                        mapSection.classList.add('hidden');
+                    }
+                } else {
+                    console.log("No valid geotags object found.");
+                    mapSection.classList.add('hidden');
+                }
+
+            } catch (error) {
+                console.error("Error loading photo details:", error);
+                errorText.textContent = error.message;
+                errorMessage.classList.remove('hidden');
+                // Hide content sections on error
+                detailPhoto.closest('.detail-outer-section')?.classList.add('hidden');
+                mapSection.classList.add('hidden');
+                detailsContainer.parentElement?.classList.add('hidden'); // Hide the details area too
+            }
+            // Not removing item from sessionStorage here to allow refresh
+        }
+
+
+        /**
+         * Populates the details section with organized EXIF data using a card layout.
+         * @param {object} exifDetails - The comprehensive EXIF details object.
+         */
+        function populateDetails(exifDetails) {
+            detailsContainer.innerHTML = ''; // Clear "Loading details..."
+
+            if (Object.keys(exifDetails).length === 0) {
+                detailsContainer.innerHTML = '<p class="text-gray-500 italic">No detailed EXIF data found for this photo.</p>';
+                return;
+            }
+
+            // --- Define groups and their corresponding Lucide icon names ---
+            const groups = {
+                'Image Info': { icon: 'image', keywords: ['Make', 'Model', 'Software', 'DateTime', 'Orientation', 'XResolution', 'YResolution', 'ResolutionUnit', 'ImageWidth', 'ImageHeight', 'PixelXDimension', 'PixelYDimension'] },
+                'Camera Settings': { icon: 'camera', keywords: ['Exposure', 'FNumber', 'ISO', 'FocalLength', 'Flash', 'WhiteBalance', 'MeteringMode', 'ShutterSpeedValue', 'ApertureValue', 'BrightnessValue', 'ExposureProgram'] },
+                'Lens Info': { icon: 'aperture', keywords: ['Lens'] }, // 'focus' or 'scan-line' might also work
+                'GPS Info': { icon: 'map-pin', keywords: ['GPS', 'latitude', 'longitude', 'altitude', 'GPSSpeed', 'GPSImgDirection', 'GPSDestBearing'] },
+                // Add more specific groups if needed
+            };
+            const otherDetailsGroupName = 'Other Details'; // Group for uncategorized items
+            const otherDetailsIcon = 'settings-2'; // Icon for other details
+
+            const groupedDetails = {};
+            const otherDetails = {};
+
+            // --- Categorize details ---
+            for (const [key, value] of Object.entries(exifDetails)) {
+                if (value === null || value === undefined || String(value).trim() === '' || key === 'MakerNote') continue; // Skip MakerNote too
+
+                let assignedGroup = null;
+                for (const [groupName, groupData] of Object.entries(groups)) {
+                    if (groupData.keywords.some(keyword => key.toLowerCase().includes(keyword.toLowerCase()))) {
+                        if (!groupedDetails[groupName]) groupedDetails[groupName] = { icon: groupData.icon, details: {} };
+                        groupedDetails[groupName].details[key] = value;
+                        assignedGroup = groupName;
+                        break;
+                    }
+                }
+                if (!assignedGroup) {
+                    otherDetails[key] = value;
+                }
+            }
+
+            // Add 'Other Details' if it has content
+            if (Object.keys(otherDetails).length > 0) {
+                groupedDetails[otherDetailsGroupName] = { icon: otherDetailsIcon, details: otherDetails };
+            }
+
+            // --- Define order of groups (optional, otherwise alphabetical) ---
+            const groupOrder = ['Image Info', 'Camera Settings', 'Lens Info', 'GPS Info', otherDetailsGroupName];
+
+            let iconsNeedRendering = false; // Flag to see if we added any icons
+
+            // --- Render the grouped details into cards ---
+            groupOrder.forEach(groupName => {
+                if (groupedDetails[groupName]) {
+                    const groupData = groupedDetails[groupName];
+                    const details = groupData.details;
+                    const iconName = groupData.icon;
+
+                    // 1. Create the Card container
+                    const cardDiv = document.createElement('div');
+                    cardDiv.className = 'detail-group-card';
+
+                    // 2. Create the Card Header
+                    const headerDiv = document.createElement('div');
+                    headerDiv.className = 'detail-group-header';
+
+                    // 2a. Add Icon
+                    if (typeof lucide !== 'undefined' && iconName && lucide.icons[iconName]) {
+                         try {
+                            const iconSVG = lucide.icons[iconName].toSvg({
+                                'stroke-width': 2,
+                                'width': 20,
+                                'height': 20,
+                                'class': 'inline-block' // Add class directly if needed
+                            });
+                            const iconWrapper = document.createElement('span');
+                            iconWrapper.className = 'icon-wrapper'; // Use class for styling
+                            iconWrapper.innerHTML = iconSVG;
+                            headerDiv.appendChild(iconWrapper);
+                            iconsNeedRendering = true; // We added an icon
+                         } catch (iconError) {
+                            console.warn(`Error creating Lucide icon "${iconName}":`, iconError);
+                         }
+                    } else if(iconName) {
+                         console.warn(`Lucide icon "${iconName}" not found.`);
+                    }
+
+                    // 2b. Add Group Title
+                    const title = document.createElement('h3');
+                    title.textContent = groupName;
+                    headerDiv.appendChild(title);
+
+                    cardDiv.appendChild(headerDiv); // Add header to card
+
+                    // 3. Create the Content Area for the grid
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'detail-group-content';
+
+                    // 4. Create the Grid for key-value pairs
+                    const gridDiv = document.createElement('div');
+                    gridDiv.className = 'detail-grid';
+
+                    const sortedKeys = Object.keys(details).sort();
+
+                    if (sortedKeys.length === 0) {
+                       contentDiv.innerHTML = '<p class="text-sm text-gray-500 italic">No details in this category.</p>'; // Handle empty group
+                    } else {
+                        // 5. Create and append each Key-Value Item
+                        for (const key of sortedKeys) {
+                            const value = details[key];
+                            const itemDiv = document.createElement('div');
+                            itemDiv.className = 'detail-item';
+
+                            const keySpan = document.createElement('span');
+                            keySpan.className = 'key';
+                            keySpan.textContent = formatDetailKey(key) + ':';
+
+                            const valueSpan = document.createElement('span');
+                            valueSpan.className = 'value';
+                            valueSpan.textContent = formatDetailValue(value);
+
+                            itemDiv.appendChild(keySpan);
+                            itemDiv.appendChild(valueSpan);
+                            gridDiv.appendChild(itemDiv);
+                        }
+                        contentDiv.appendChild(gridDiv); // Add grid to content area
+                   }
+
+                    cardDiv.appendChild(contentDiv); // Add content area to card
+
+                    // 6. Add the completed card to the main details container
+                    detailsContainer.appendChild(cardDiv);
+                }
+             });
+
+             // Call createIcons *once* after all icons have been potentially added via innerHTML
+             if (iconsNeedRendering && typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
+                 // This might re-render icons added at load time, but ensures dynamic ones render.
+                 // Usually safe unless you have complex interactions tied to specific SVG instances.
+                 // console.log("Calling lucide.createIcons() after dynamic additions.");
+                 // lucide.createIcons(); // Often not needed if toSvg() generates full SVG string
+             }
+        }
+
+        /**
+         * Formats an EXIF key for display.
+         */
+        function formatDetailKey(key) {
+            // Add space before capital letters, handle specific acronyms maybe
+             let formatted = key.replace(/([A-Z]+)/g, ' $1').replace(/^./, str => str.toUpperCase());
+             // Correct GPS specific if needed
+             formatted = formatted.replace(/^G P S/, 'GPS');
+             // Add more corrections if needed (e.g., F Number -> F-Number)
+             formatted = formatted.replace(/F Number/, 'F-Number');
+             return formatted.trim();
+        }
+
+        /**
+         * Formats an EXIF value for display.
+         */
+        function formatDetailValue(value) {
+            if (typeof value === 'object' && value !== null) {
+                // Special handling for specific known objects if needed
+                if (value.description && typeof value.value === 'number') { // e.g., Orientation
+                    return `${value.description} (${value.value})`;
+                }
+                 // Basic stringify for other simple objects/arrays
+                 // Avoid stringifying very large arrays/objects
+                 try {
+                     const jsonString = JSON.stringify(value);
+                     if (jsonString.length > 150) return '[Complex Object/Array]'; // Limit length
+                     return jsonString;
+                 } catch { return '[Object]'; }
+            }
+            if (typeof value === 'number') {
+                if (Number.isInteger(value)) { return value.toString(); }
+                else {
+                    // Use more precision for specific scientific values if needed, else limit
+                    return parseFloat(value.toFixed(4)).toString(); // toFixed(4) then parseFloat removes trailing zeros
+                }
+            }
+            // Limit string length display
+            let stringValue = String(value);
+            if (stringValue.length > 200) {
+                return stringValue.substring(0, 197) + '...';
+            }
+            return stringValue;
+        }
+
+
+        /**
+         * Sets up the Leaflet map for the detail view.
+         */
+        function setupDetailMap(lat, lon, bearing, lineLength, thumbnailUrl, filename) {
+            try {
+                const detailMap = L.map(detailMapDiv).setView([lat, lon], 16);
+
+                var osmLayerDetail = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                 });
+                 var satelliteLayerDetail = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                     attribution: 'Tiles &copy; Esri',
+                     maxZoom: 19 // Allow closer zoom on satellite
+                 });
+                 satelliteLayerDetail.addTo(detailMap);
+                 L.control.layers({"OpenStreetMap": osmLayerDetail, "Satellite": satelliteLayerDetail}, null, { collapsed: true }).addTo(detailMap);
+
+                L.marker([lat, lon]).addTo(detailMap)
+                    .bindPopup(`<b>${filename}</b>`)
+                    .openPopup();
+
+                if (bearing !== null && lineLength > 0) {
+                    const bearingRad = bearing * Math.PI / 180;
+                    const startLatRad = lat * Math.PI / 180;
+                    const startLonRad = lon * Math.PI / 180;
+                    const endLatRad = Math.asin(Math.sin(startLatRad) * Math.cos(lineLength / R_DETAIL) + Math.cos(startLatRad) * Math.sin(lineLength / R_DETAIL) * Math.cos(bearingRad));
+                    const endLonRad = startLonRad + Math.atan2(Math.sin(bearingRad) * Math.sin(lineLength / R_DETAIL) * Math.cos(startLatRad), Math.cos(lineLength / R_DETAIL) - Math.sin(startLatRad) * Math.sin(endLatRad));
+                    const endLat = endLatRad * 180 / Math.PI;
+                    const endLon = endLonRad * 180 / Math.PI;
+                    L.polyline([[lat, lon], [endLat, endLon]], { color: 'red', weight: 3 }).addTo(detailMap);
+                }
+
+                 setTimeout(() => detailMap.invalidateSize(), 100);
+
+            } catch (mapError) {
+                console.error("Failed to initialize detail map:", mapError);
+                mapSection.innerHTML = '<p class="text-red-500">Error loading map.</p>';
+            }
+        }
+    </script>
+
+</body>
+</html>
